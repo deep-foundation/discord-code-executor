@@ -60,8 +60,6 @@ client.on('messageCreate', async message => {
       const response = await fetch(fullMessageAttachment.url);
       const fullMessageContent = await response.text();
 
-      console.log(fullMessageContent);
-
       // Extract code blocks from the file content
       allCodeBlocks = extractCodeBlocks(fullMessageContent);
     } else {
@@ -83,42 +81,60 @@ client.on('messageCreate', async message => {
     fsExtra.ensureDirSync(messageDir);
 
     // Function to execute and capture JS code
-    const executeCode = (code, index) => {
+    const executeCode = (sourceCode, index) => {
       return new Promise((resolve) => {
         const filePath = path.join(messageDir, `code_${index}.js`);
-        fsExtra.writeFileSync(filePath, code);
+        console.log({sourceCode});
+        fsExtra.writeFileSync(filePath, sourceCode);
 
-        const child = exec(`node ${filePath}`, { timeout: executionTimeout }, (error, stdout, stderr) => {
-          let output;
-          if (error) {
-            output = error.killed
-              ? `Execution timed out after ${executionTimeout / 1000} seconds.`
-              : `Error: ${stderr}`;
-            resolve({ code, output, status: 'error' });
+        const child = exec(`node ${filePath}`, { timeout: executionTimeout });
+
+        let output = '';
+
+        // Collect stdout and stderr streams
+        child.stdout.on('data', (data) => output += data.toString());
+        child.stderr.on('data', (data) => output += data.toString());
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve({ code: sourceCode, output, status: 'success' });
           } else {
-            output = stdout;
-            resolve({ code, output, status: 'success' });
+            resolve({ code: sourceCode, output, status: 'error' });
           }
         });
 
         // Set a timeout to kill the process if it exceeds the allowed execution time
-        setTimeout(() => {
+        const timeout = setTimeout(() => {
           child.kill();
+          resolve({ code: sourceCode, output, status: 'timeout', duration: executionTimeout / 1000 });
         }, executionTimeout);
+
+        // Clear timeout on process end
+        child.on('exit', () => {
+          clearTimeout(timeout);
+        });
       });
     };
+
+    console.log({ allCodeBlocks });
 
     // Execute all code blocks in parallel
     const results = await Promise.all(allCodeBlocks.map((code, index) => executeCode(code, index)));
 
+    let index = 0;
     // Send results as replies
     for (const result of results) {
-      const content = `\`\`\`js\n${result.code}\n\`\`\`\nOutput:\n\`\`\`\n${result.output}\n\`\`\`\nStatus: ${result.status}`;
+      let content;
+      if (result.status === 'success' || result.status === 'error') {
+        content = `\`\`\`js\n${result.code}\n\`\`\`\nOutput:\n\`\`\`\n${result.output}\n\`\`\`\nStatus: ${result.status}`;
+      } else {
+        content = `\`\`\`js\n${result.code}\n\`\`\`\nExecution timed out after ${result.duration} seconds. Status: ${result.status}`;
+      }
       
       if (content.length > maxMessageLength) {
         // Write the full content to a file and attach
-        const codeFilePath = path.join(messageDir, `code_${result.status}.js`);
-        const outputFilePath = path.join(messageDir, `output_${result.status}.txt`);
+        const codeFilePath = path.join(messageDir, `code_${index}.js`);
+        const outputFilePath = path.join(messageDir, `output_${index}.txt`);
         
         fsExtra.writeFileSync(codeFilePath, result.code);
         fsExtra.writeFileSync(outputFilePath, result.output);
@@ -135,6 +151,7 @@ client.on('messageCreate', async message => {
       } else {
         await message.reply({ content });
       }
+      index++;
     }
 
     // Clean up by removing the temporary directory for this message
@@ -143,6 +160,7 @@ client.on('messageCreate', async message => {
   } catch (error) {
     // Send error message without stacktrace
     await message.reply(`Error: ${error.message}`);
+    console.log(error);
   }
 });
 
