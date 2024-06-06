@@ -24,7 +24,7 @@ client.on('messageCreate', async message => {
 
   // Function to extract JS code blocks
   const extractCodeBlocks = text => {
-    const regex = /```js\n([\s\S]*?)```/g;
+    const regex = /```js\n([\s\S]*?)\n```/g;
     let match;
     const codeBlocks = [];
     while ((match = regex.exec(text)) !== null) {
@@ -37,14 +37,30 @@ client.on('messageCreate', async message => {
     // Start typing indicator
     await message.channel.sendTyping();
 
-    // Check for 'full-message.md' attachment
-    const fullMessageAttachment = message.attachments.find(att => att.name === 'full-message.md');
+    // Initialize variable for full-message.md attachment
+    let fullMessageAttachment;
+    
+    // First check the attachments of the original message
+    console.log('Attachments in original message:', message.attachments.map(att => att.name));
+    fullMessageAttachment = message.attachments.find(att => att.name.trim() === 'full-message.md');
+
+    // If not found, check the attachments of the replied message (if any)
+    if (!fullMessageAttachment) {
+      const repliedMessage = await message.fetchReference().catch(() => null);
+      if (repliedMessage) {
+        console.log('Attachments in replied message:', repliedMessage.attachments.map(att => att.name));
+        fullMessageAttachment = repliedMessage.attachments.find(att => att.name.trim() === 'full-message.md');
+      }
+    }
+
     let allCodeBlocks = [];
 
     if (fullMessageAttachment) {
       // Fetch content from 'full-message.md'
       const response = await fetch(fullMessageAttachment.url);
       const fullMessageContent = await response.text();
+
+      console.log(fullMessageContent);
 
       // Extract code blocks from the file content
       allCodeBlocks = extractCodeBlocks(fullMessageContent);
