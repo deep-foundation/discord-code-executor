@@ -1,0 +1,17 @@
+{
+  "name": "discord-code-executor",
+  "version": "1.0.0",
+  "description": "[![Gitpod](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/deep-foundation/discord-code-executor)",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "child_process": "^1.0.2",
+    "discord.js": "^13.17.1",
+    "fs-extra": "^11.2.0"
+  }
+}
