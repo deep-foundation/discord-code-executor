@@ -1,4 +1,4 @@
-const { Client, Intents } = require('discord.js');
+const { Client, Intents, MessageAttachment } = require('discord.js');
 const fsExtra = require('fs-extra');
 const { exec } = require('child_process');
 const path = require('path');
@@ -19,6 +19,7 @@ client.on('messageCreate', async message => {
   if (!message.mentions.has(client.user)) return;
 
   const executionTimeout = 10000; // Timeout duration in milliseconds
+  const maxMessageLength = 2000; // Discord max message length
 
   // Function to extract JS code blocks
   const extractCodeBlocks = text => {
@@ -58,14 +59,15 @@ client.on('messageCreate', async message => {
         fsExtra.writeFileSync(filePath, code);
 
         const child = exec(`node ${filePath}`, { timeout: executionTimeout }, (error, stdout, stderr) => {
+          let output;
           if (error) {
-            if (error.killed) {
-              resolve({ code, output: `Execution timed out after ${executionTimeout / 1000} seconds.`, status: 'timeout' });
-            } else {
-              resolve({ code, output: `Error: ${stderr}`, status: 'error' });
-            }
+            output = error.killed
+              ? `Execution timed out after ${executionTimeout / 1000} seconds.`
+              : `Error: ${stderr}`;
+            resolve({ code, output, status: 'error' });
           } else {
-            resolve({ code, output: stdout, status: 'success' });
+            output = stdout;
+            resolve({ code, output, status: 'success' });
           }
         });
 
@@ -79,11 +81,30 @@ client.on('messageCreate', async message => {
     // Execute all code blocks in parallel
     const results = await Promise.all(allCodeBlocks.map((code, index) => executeCode(code, index)));
 
-    // Send execution status as replies
+    // Send results as replies
     for (const result of results) {
-      await message.reply({
-        content: `Execution status: ${result.status}`
-      });
+      const content = `\`\`\`js\n${result.code}\n\`\`\`\nOutput:\n\`\`\`\n${result.output}\n\`\`\`\nStatus: ${result.status}`;
+      
+      if (content.length > maxMessageLength) {
+        // Write the full content to a file and attach
+        const codeFilePath = path.join(messageDir, `code_${result.status}.js`);
+        const outputFilePath = path.join(messageDir, `output_${result.status}.txt`);
+        
+        fsExtra.writeFileSync(codeFilePath, result.code);
+        fsExtra.writeFileSync(outputFilePath, result.output);
+
+        const attachments = [
+          new MessageAttachment(codeFilePath),
+          new MessageAttachment(outputFilePath),
+        ];
+
+        await message.reply({
+          content: `Execution status: ${result.status}`,
+          files: attachments
+        });
+      } else {
+        await message.reply({ content });
+      }
     }
 
     // Clean up by removing the temporary directory for this message
