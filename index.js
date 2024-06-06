@@ -2,6 +2,7 @@ const { Client, Intents, MessageAttachment } = require('discord.js');
 const fsExtra = require('fs-extra');
 const { exec } = require('child_process');
 const path = require('path');
+const fetch = require('node-fetch'); // To fetch file content from the Discord CDN
 
 // Load bot token from a file
 const fs = require('fs');
@@ -36,12 +37,25 @@ client.on('messageCreate', async message => {
     // Start typing indicator
     await message.channel.sendTyping();
 
-    // Extract code blocks from the message and its reply (if any)
-    const messageCodeBlocks = extractCodeBlocks(message.content);
-    const repliedMessage = await message.fetchReference().catch(() => null);
-    const replyCodeBlocks = repliedMessage ? extractCodeBlocks(repliedMessage.content) : [];
+    // Check for 'full-message.md' attachment
+    const fullMessageAttachment = message.attachments.find(att => att.name === 'full-message.md');
+    let allCodeBlocks = [];
 
-    const allCodeBlocks = [...messageCodeBlocks, ...replyCodeBlocks];
+    if (fullMessageAttachment) {
+      // Fetch content from 'full-message.md'
+      const response = await fetch(fullMessageAttachment.url);
+      const fullMessageContent = await response.text();
+
+      // Extract code blocks from the file content
+      allCodeBlocks = extractCodeBlocks(fullMessageContent);
+    } else {
+      // Extract code blocks from the message and its reply (if any)
+      const messageCodeBlocks = extractCodeBlocks(message.content);
+      const repliedMessage = await message.fetchReference().catch(() => null);
+      const replyCodeBlocks = repliedMessage ? extractCodeBlocks(repliedMessage.content) : [];
+
+      allCodeBlocks = [...messageCodeBlocks, ...replyCodeBlocks];
+    }
 
     if (allCodeBlocks.length === 0) {
       message.reply('No JS code blocks found.');
